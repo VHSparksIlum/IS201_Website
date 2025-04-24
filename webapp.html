@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tron Light Cycle Game</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #top-bar {
+      width: 100%;
+      padding: 1em;
+      background: #222;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-sizing: border-box;
+    }
+
+    #top-bar button {
+      margin: 0 200px;
+    }
+
+    #home-btn, #play-again-btn, #start-btn {
+      background: #00f;
+      color: #fff;
+      border: none;
+      padding: 1em 1em;
+      font-size: 1em;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    canvas {
+      border: 2px solid #fff;
+      margin-top: 20px;
+    }
+
+    #scoreboard {
+      font-size: 1.5em;
+      margin-top: 10px;
+      color: #fff;
+      flex-grow: 1;
+      text-align: center;
+    }
+
+    #match-winner {
+      font-size: 1.5em;
+      color: #0f0;
+      margin-top: 20px;
+      display: none;
+    }
+
+  </style>
+</head>
+<body>
+  <div id="top-bar">
+    <button id="home-btn" onclick="window.location.href='index.html'">Home</button>
+    <div id="scoreboard">Player 1: 0 | Player 2: 0</div>
+    <button id="play-again-btn" onclick="resetGame()" style="display: none;">Play Again</button>
+    <button id="start-btn" onclick="startGame()">Start Game</button>
+  </div>
+  <canvas id="gameCanvas" width="600" height="400"></canvas>
+  <div id="match-winner"></div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreboard = document.getElementById('scoreboard');
+    const playAgainBtn = document.getElementById('play-again-btn');
+    const startBtn = document.getElementById('start-btn');
+    const matchWinner = document.getElementById('match-winner');
+
+    const gridSize = 10;
+    const cols = canvas.width / gridSize;
+    const rows = canvas.height / gridSize;
+    let player1Score = 0;
+    let player2Score = 0;
+    let roundOver = false;
+    let gameOver = false;
+    let gameMap = {}; // Keep track of where players have moved
+
+    // Game speed (in milliseconds per frame)
+    const gameSpeed = 60; // Frame delay
+    let lastFrameTime = 0;
+    let gameInterval = null; // To hold the game loop reference
+
+    // Sound effects
+    const hitSound = new Audio('https://www.soundjay.com/button/beep-07.wav');
+    const wallHitSound = new Audio('https://www.soundjay.com/button/beep-09.wav');
+
+    class Player {
+      constructor(color, lightColor, keys) {
+        this.color = color;
+        this.lightColor = lightColor; // Light color for the front pixels
+        this.keys = keys;
+        this.reset();
+      }
+
+      reset() {
+        const safeMargin = 5;
+        this.x = Math.floor(Math.random() * cols);
+        this.y = Math.floor(Math.random() * rows);
+        this.dx = 1;
+        this.dy = 0;
+        this.trail = [];
+        this.alive = true;
+      }
+
+      move() {
+        if (!this.alive) return;
+        this.x += this.dx;
+        this.y += this.dy;
+
+        if (this.x < 0 || this.y < 0 || this.x >= cols || this.y >= rows) {
+          this.alive = false;
+          wallHitSound.play();
+          return;
+        }
+
+        const key = `${this.x},${this.y}`;
+        if (gameMap[key]) {
+          this.alive = false;
+          hitSound.play();
+        } else {
+          this.trail.push({ x: this.x, y: this.y });
+          gameMap[key] = this.color;
+        }
+      }
+
+      draw() {
+        ctx.fillStyle = this.color;
+        for (let p of this.trail) {
+          ctx.fillRect(p.x * gridSize, p.y * gridSize, gridSize, gridSize);
+        }
+      }
+
+      changeDirection(keyCode) {
+        const dirs = this.keys;
+        if (keyCode === dirs.left && this.dx === 0) { this.dx = -1; this.dy = 0; }
+        if (keyCode === dirs.up && this.dy === 0)   { this.dx = 0; this.dy = -1; }
+        if (keyCode === dirs.right && this.dx === 0){ this.dx = 1; this.dy = 0; }
+        if (keyCode === dirs.down && this.dy === 0) { this.dx = 0; this.dy = 1; }
+      }
+    }
+
+    const player1 = new Player('#0000ff', '#1E90FF', { up: 38, down: 40, left: 37, right: 39 });
+    const player2 = new Player('#FFA500', '#FFD700', { up: 87, down: 83, left: 65, right: 68 });
+
+    document.addEventListener('keydown', (e) => {
+      player1.changeDirection(e.keyCode);
+      player2.changeDirection(e.keyCode);
+    });
+
+    // Main game loop
+    function gameLoop(currentTime) {
+      if (gameOver) return;
+
+      const deltaTime = currentTime - lastFrameTime;
+
+      if (deltaTime > gameSpeed) {
+        lastFrameTime = currentTime;
+
+        if (player1.alive) player1.move();
+        if (player2.alive) player2.move();
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        player1.draw();
+        player2.draw();
+
+        if (!player1.alive || !player2.alive) {
+          roundOver = true;
+
+          if (player1.alive) {
+            player1Score++;
+          } else if (player2.alive) {
+            player2Score++;
+          }
+
+          updateScoreboard();
+          
+          if (player1Score >= 2 || player2Score >= 2) {
+            gameOver = true;
+            matchWinner.style.display = 'block';
+            matchWinner.innerText = player1Score >= 2 ? 'Player 1 wins the match!' : 'Player 2 wins the match!';
+          } else {
+            playAgainBtn.style.display = 'block';
+          }
+        }
+      }
+
+      if (!gameOver) {
+        gameInterval = requestAnimationFrame(gameLoop);
+      }
+    }
+
+    function updateScoreboard() {
+      scoreboard.innerText = `Player 1: ${player1Score} | Player 2: ${player2Score}`;
+    }
+
+    function startGame() {
+      startBtn.style.display = 'none'; // Hide start button
+      gameMap = {}; // Reset the game map
+      player1Score = 0;
+      player2Score = 0;
+      roundOver = false;
+      gameOver = false;
+      playAgainBtn.style.display = 'none';
+      matchWinner.style.display = 'none';
+      player1.reset();
+      player2.reset();
+      gameInterval = requestAnimationFrame(gameLoop); // Start the game loop
+    }
+
+    function resetGame() {
+      // Stop the existing game loop if running
+      gameOver = false;
+      roundOver = false;
+      gameMap = {}; // Reset the game map
+      player1Score = 0;
+      player2Score = 0;
+
+      // Reset player positions, clear canvas, and hide elements
+      player1.reset();
+      player2.reset();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Hide the Play Again button and match winner message
+      playAgainBtn.style.display = 'none';
+      matchWinner.style.display = 'none';
+
+      // Restart the game loop
+      gameInterval = requestAnimationFrame(gameLoop); // Start the game loop again
+    }
+
+  </script>
+</body>
+</html>
